@@ -1,0 +1,24 @@
+# ==========================
+# Database Configuration
+# ==========================
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASS=emran
+DB_NAME=tv
+
+# ==========================
+# JWT Configuration
+# ==========================
+JWT_SECRET=K7p$2h!mX9r  # Example strong secret
+
+# ==========================
+# Stripe Configuration
+# ==========================
+STRIPE_SECRET_KEY=sk_test_YourStripeSecretKeyHere
+
+# ==========================
+# App Environment
+# ==========================
+NODE_ENV=development
+PORT=7000

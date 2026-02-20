@@ -1,0 +1,129 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background-color: #000;
+  color: #fff;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: #1a1a1a;
+}
+
+header .logo {
+  font-size: 24px;
+  color: #ff9900;
+  font-weight: bold;
+}
+
+header nav ul {
+  list-style: none;
+  display: flex;
+  gap: 15px;
+}
+
+header nav ul li a {
+  text-decoration: none;
+  color: #ff9900;
+  font-weight: bold;
+  padding: 6px 12px;
+  border: 1px solid #ff9900;
+  border-radius: 4px;
+  transition: 0.3s;
+}
+
+header nav ul li a:hover {
+  background-color: #ff9900;
+  color: #000;
+}
+
+main {
+  padding: 20px;
+}
+
+.playlist-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.playlist-card {
+  background-color: #111;
+  padding: 15px;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 200px;
+}
+
+.playlist-card h3 {
+  margin: 0 0 10px 0;
+  color: #ff9900;
+}
+
+.playlist-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.playlist-card ul li {
+  font-size: 14px;
+  color: #aaa;
+  margin: 2px 0;
+}
+
+#createPlaylistForm {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+#createPlaylistForm input {
+  flex: 1;
+  padding: 10px;
+  border-radius: 4px;
+  border: none;
+}
+
+#createPlaylistForm button {
+  padding: 10px;
+  border: none;
+  border-radius: 4px;
+  background-color: #ff9900;
+  font-weight: bold;
+  cursor: pointer;
+  color: #000;
+}
+
+#toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toast {
+  background-color: #1a1a1a;
+  color: #fff;
+  border-left: 4px solid #ff9900;
+  padding: 12px 16px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  font-family: "Helvetica Neue", sans-serif;
+  font-size: 14px;
+  animation: fadeInOut 4s ease forwards;
+  opacity: 0;
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(-10px); }
+  10% { opacity: 1; transform: translateY(0); }
+  90% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
