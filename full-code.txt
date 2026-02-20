@@ -1,0 +1,1500 @@
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+
+export const GetUser = createParamDecorator(
+  (data: unknown, ctx: ExecutionContext) => {
+    const request = ctx.switchToHttp().getRequest();
+    return request.user; // The user added by JwtAuthGuard
+  },
+);
+import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+
+@Catch()
+export class ApiExceptionFilter implements ExceptionFilter {
+  catch(exception: any, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse();
+    const status = exception instanceof HttpException
+      ? exception.getStatus()
+      : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    response.status(status).json({
+      statusCode: status,
+      message: exception.message || 'Internal server error',
+    });
+  }
+}
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+
+
+
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  constructor(private readonly jwtService: JwtService) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    const token = request.headers['authorization']?.split(' ')[1];
+    if (!token) return false;
+
+    try {
+      const decoded = this.jwtService.verify(token);
+      request.user = decoded;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  Logger,
+} from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
+
+@Injectable()
+export class LoggingInterceptor implements NestInterceptor {
+  private readonly logger = new Logger('HTTP');
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    const req = context.switchToHttp().getRequest();
+    const method = req.method;
+    const url = req.url;
+    const now = Date.now();
+
+    this.logger.log(`Incoming Request: ${method} ${url}`);
+
+    return next.handle().pipe(
+      tap(() => {
+        const res = context.switchToHttp().getResponse();
+        const statusCode = res.statusCode;
+        this.logger.log(
+          `Outgoing Response: ${method} ${url} -> ${statusCode} (${Date.now() - now}ms)`,
+        );
+      }),
+    );
+  }
+}
+import { Injectable } from '@nestjs/common';
+import { Repository, SelectQueryBuilder, ObjectLiteral } from 'typeorm';
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+@Injectable()
+export class PaginationService {
+  async paginate<T extends ObjectLiteral>(
+    repository: Repository<T>,
+    page = 1,
+    limit = 20,
+    query?: SelectQueryBuilder<T>,
+  ): Promise<PaginatedResult<T>> {
+    const skip = (page - 1) * limit;
+
+    let data: T[];
+    let total: number;
+
+    if (query) {
+      [data, total] = await query.skip(skip).take(limit).getManyAndCount();
+    } else {
+      [data, total] = await repository.findAndCount({ skip, take: limit });
+    }
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+}
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+
+@Injectable()
+export class JwtUtilService {
+  constructor(private readonly jwtService: JwtService) {}
+
+  generateToken(payload: any): string {
+    return this.jwtService.sign(payload);
+  }
+
+  verifyToken(token: string): any {
+    try {
+      return this.jwtService.verify(token);
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+  }
+
+  decodeToken(token: string): any {
+    return this.jwtService.decode(token);
+  }
+}
+// src/modules/common/common.module.ts
+import { Module, Global } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { JwtUtilService } from './utils/jwt.service';
+import { LoggingInterceptor } from './interceptors/logging.interceptor';
+import { PaginationService } from './pagination/pagination.service';
+
+
+
+@Global() // Make this module globally available so we don’t need to import in every module
+@Module({
+  imports: [
+    JwtModule.register({
+      secret: process.env.JWT_SECRET || 'supersecretkey',
+      signOptions: { expiresIn: '7d' },
+    }),
+  ],
+  providers: [
+    JwtUtilService,
+    LoggingInterceptor,
+    
+    PaginationService, // added pagination service
+  ],
+  exports: [
+    JwtUtilService,
+    LoggingInterceptor,
+    
+    PaginationService,
+    JwtModule,
+  ],
+})
+export class CommonModule {}
+
+import { Controller, Post, Body } from '@nestjs/common';
+import { AuthService } from '../services/auth.service';
+import { RegisterDto } from '../dto/register.dto';
+import { LoginDto } from '../dto/login.dto';
+
+
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('register')
+  register(@Body() body: RegisterDto) {
+    return this.authService.register(body);
+  }
+
+  @Post('login')
+  login(@Body() body: LoginDto) {
+    return this.authService.login(body);
+  }
+}
+import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsNotEmpty, MinLength } from 'class-validator';
+
+export class LoginDto {
+  @ApiProperty({ example: 'john@example.com' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: 'strongpassword123' })
+  @IsNotEmpty()
+  @MinLength(6)
+  password: string;
+}
+import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsNotEmpty, MinLength } from 'class-validator';
+
+export class RegisterDto {
+  @ApiProperty({ example: 'john@example.com' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: 'strongpassword123' })
+  @IsNotEmpty()
+  @MinLength(6)
+  password: string;
+}
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+
+@Entity()
+export class Role {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ unique: true })
+  name: string;
+}
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToMany,
+  JoinTable,
+  OneToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { Role } from './role.entity';
+import { Subscription } from 'src/modules/subscription/entities/subscription.entity';
+import { Playlist } from 'src/modules/playlist/entities/playlist.entity';
+
+
+@Entity()
+export class User {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ unique: true })
+  email: string;
+
+  @Column()
+  password: string;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  // 🟢 Indicates if user currently has an active paid subscription
+  @Column({ default: false })
+  isSubscribed: boolean;
+
+  // 🟡 Optional: store which plan the user is on
+  @Column({ nullable: true })
+  subscriptionTier?: string; // e.g., 'BASIC', 'PREMIUM'
+
+  // 🕒 Optional: store subscription expiry date
+  @Column({ type: 'timestamp', nullable: true })
+  subscriptionExpiry?: Date;
+
+  @ManyToMany(() => Role)
+  @JoinTable()
+  roles: Role[];
+
+  @OneToMany(() => Subscription, (subscription) => subscription.user)
+  subscriptions: Subscription[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+@OneToMany(() => Playlist, (playlist) => playlist.user)
+playlists: Playlist[];
+}
+// src/modules/auth/services/auth.service.ts
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { JwtService } from '@nestjs/jwt';
+import { Repository } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
+import { User } from '../entities/user.entity';
+import { RegisterDto } from '../dto/register.dto';
+import { LoginDto } from '../dto/login.dto';
+
+
+@Injectable()
+export class AuthService {
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    private readonly jwtService: JwtService,
+  ) {}
+
+  async register({ email, password }: RegisterDto) {
+    const existing = await this.userRepo.findOne({ where: { email } });
+    if (existing) throw new BadRequestException('Email already exists');
+
+    const hashed = await bcrypt.hash(password, 10);
+    const user = this.userRepo.create({ email, password: hashed });
+    await this.userRepo.save(user);
+
+    const token = this.jwtService.sign({ id: user.id, email: user.email });
+    return { user, token };
+  }
+
+  async login({ email, password }: LoginDto) {
+    const user = await this.userRepo.findOne({ where: { email } });
+    if (!user) throw new BadRequestException('Invalid credentials');
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) throw new BadRequestException('Invalid credentials');
+
+    const token = this.jwtService.sign({ id: user.id, email: user.email });
+    return { user, token };
+  }
+}
+// src/modules/auth/services/user.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from '../entities/user.entity';
+
+@Injectable()
+export class UserService {
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
+
+  /** 🟢 Find user by ID */
+  async findById(id: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) throw new NotFoundException(`User not found with ID: ${id}`);
+    return user;
+  }
+
+  /** 🟡 Update user subscription status */
+  async updateSubscription(userId: string, isSubscribed: boolean): Promise<User> {
+    const user = await this.findById(userId);
+    user.isSubscribed = isSubscribed;
+    return this.userRepository.save(user);
+  }
+
+  /** 🟣 Optionally update subscription tier or expiry date later */
+  async updateSubscriptionDetails(
+    userId: string,
+    details: { tier?: string; expiryDate?: Date },
+  ): Promise<User> {
+    const user = await this.findById(userId);
+    Object.assign(user, details);
+    return this.userRepository.save(user);
+  }
+}
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule } from '@nestjs/config';
+
+import { User } from './entities/user.entity';
+import { Role } from './entities/role.entity';
+import { Subscription } from '../subscription/entities/subscription.entity';
+
+import { AuthController } from './controllers/auth.controller';
+import { AuthService } from './services/auth.service';
+import { UserService } from './services/user.service';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    TypeOrmModule.forFeature([User, Role, Subscription]),
+    JwtModule.register({
+      secret: process.env.JWT_SECRET || 'default_dev_secret',
+      signOptions: { expiresIn: '1h' },
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService, UserService],
+  exports: [AuthService, UserService],
+})
+export class AuthModule {}
+
+// playback.controller.ts
+import {
+  Controller,
+  Get,
+  Param,
+  Req,
+  Headers,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import type { Request } from 'express';
+import { PlaybackService } from '../services/playback.service';
+import { PlaybackResponseDto } from '../dtos/playback-response.dto';
+
+
+@Controller('playback')
+export class PlaybackController {
+  constructor(private readonly playbackService: PlaybackService) {}
+
+  @Get(':videoId')
+  @HttpCode(HttpStatus.OK)
+  async play(
+    @Param('videoId') videoId: string,
+    @Req() req: Request,
+    @Headers('x-session-id') sessionId?: string,
+  ): Promise<PlaybackResponseDto> {
+    const ip =
+      (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
+    const authHeader = (req.headers['authorization'] as string) || null;
+    const userAgent = req.headers['user-agent'] || '';
+
+    return this.playbackService.getPlaybackFor(videoId, {
+      authorization: authHeader,
+      sessionId,
+      ip,
+      userAgent: String(userAgent),
+    });
+  }
+}
+export interface PlaybackRequestDto {
+  authorization?: string | null; // "Bearer <token>"
+  sessionId?: string | undefined;
+  ip?: string | undefined;
+  userAgent?: string;
+}
+export class PlaybackResponseDto {
+  manifestUrl?: string;
+  locked: boolean;
+  reason?: string;
+  freeRemaining?: number; // how many free plays left (for guest)
+}
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import Redis from 'ioredis';
+
+@Injectable()
+export class CacheService implements OnModuleInit, OnModuleDestroy {
+  private client: Redis;
+  private readonly logger = new Logger(CacheService.name);
+
+  constructor() {
+    const host = process.env.REDIS_HOST || '127.0.0.1';
+    const port = parseInt(process.env.REDIS_PORT || '6379', 10);
+    const password = process.env.REDIS_PASSWORD || undefined;
+
+    this.client = new Redis({
+      host,
+      port,
+      password,
+      lazyConnect: true,
+    });
+  }
+
+  async onModuleInit() {
+    try {
+      await this.client.connect();
+      this.logger.log('Connected to Redis');
+    } catch (err) {
+      this.logger.error('Redis connection failed', err);
+    }
+  }
+
+  async onModuleDestroy() {
+    try {
+      await this.client.quit();
+      this.logger.log('Redis disconnected');
+    } catch (err) {
+      this.logger.error('Error disconnecting Redis', err);
+    }
+  }
+
+  async get<T = any>(key: string): Promise<T | null> {
+    const raw = await this.client.get(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  }
+
+  async set(key: string, value: any, ttlSeconds?: number): Promise<void> {
+    const raw = JSON.stringify(value);
+    if (ttlSeconds && ttlSeconds > 0) {
+      await this.client.setex(key, ttlSeconds, raw);
+    } else {
+      await this.client.set(key, raw);
+    }
+  }
+
+  async incr(key: string): Promise<number> {
+    return this.client.incr(key);
+  }
+
+  async del(key: string): Promise<number> {
+    return this.client.del(key);
+  }
+
+  async expire(key: string, seconds: number): Promise<number> {
+    return this.client.expire(key, seconds);
+  }
+}
+
+// src/modules/playback/services/guest-tracking.service.ts
+import { Injectable } from '@nestjs/common';
+import { CacheService } from './cache.service';
+import { SubscriptionService } from 'src/modules/subscription/services/subscription.service';
+
+@Injectable()
+export class GuestTrackingService {
+  private readonly FREE_LIMIT = 10;
+  private readonly TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+  constructor(
+    private readonly cache: CacheService,
+    private readonly subscriptionService: SubscriptionService,
+  ) {}
+
+  private sessionKey(sessionId: string) {
+    return `guest:session:${sessionId}`;
+  }
+
+  private ipKey(ip: string) {
+    return `guest:ip:${ip}`;
+  }
+
+  private userKey(userId: string) {
+    return `user:watchcount:${userId}`;
+  }
+
+  /** Increment guest or user watch count */
+  async incrementForUser(userId: string): Promise<number> {
+    // Subscribed users can watch unlimited
+    const subscribed = await this.subscriptionService.isUserSubscribed(userId);
+    if (subscribed) return 0;
+
+    const key = this.userKey(userId);
+    const exists = await this.cache.get<number>(key);
+    if (exists === null) {
+      await this.cache.set(key, 1, this.TTL_SECONDS);
+      return 1;
+    }
+    const newVal = await this.cache.incr(key);
+    await this.cache.expire(key, this.TTL_SECONDS);
+    return newVal;
+  }
+
+  async incrementForSession(sessionId: string): Promise<number> {
+    const key = this.sessionKey(sessionId);
+    const exists = await this.cache.get<number>(key);
+    if (exists === null) {
+      await this.cache.set(key, 1, this.TTL_SECONDS);
+      return 1;
+    }
+    const newVal = await this.cache.incr(key);
+    await this.cache.expire(key, this.TTL_SECONDS);
+    return newVal;
+  }
+
+  async incrementForIp(ip: string): Promise<number> {
+    const key = this.ipKey(ip);
+    const exists = await this.cache.get<number>(key);
+    if (exists === null) {
+      await this.cache.set(key, 1, this.TTL_SECONDS);
+      return 1;
+    }
+    const newVal = await this.cache.incr(key);
+    await this.cache.expire(key, this.TTL_SECONDS);
+    return newVal;
+  }
+
+  /** Check free remaining for guests/users */
+  async freeRemainingForUser(userId: string) {
+    const subscribed = await this.subscriptionService.isUserSubscribed(userId);
+    if (subscribed) return Infinity; // unlimited
+    const count = await this.cache.get<number>(this.userKey(userId)) ?? 0;
+    return Math.max(0, this.FREE_LIMIT - count);
+  }
+
+  async freeRemainingForSession(sessionId: string) {
+    const count = await this.cache.get<number>(this.sessionKey(sessionId)) ?? 0;
+    return Math.max(0, this.FREE_LIMIT - count);
+  }
+
+  /** Determine if count has reached limit */
+  isLockedCount(count: number): boolean {
+    return count >= this.FREE_LIMIT;
+  }
+}
+
+// playback/services/manifest.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { VideoService } from '../../video/services/video.service';
+
+@Injectable()
+export class ManifestService {
+  constructor(private readonly videoService: VideoService) {}
+
+  async getManifest(videoId: string) {
+    // Use the correct method name
+    const video = await this.videoService.findById(videoId);
+
+    if (!video) throw new NotFoundException(`Video with ID ${videoId} not found`);
+
+    // your manifest generation logic here...
+    return `manifest-for-video-${video.id}`;
+  }
+}
+// src/modules/playback/services/playback.service.ts
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { GuestTrackingService } from './guest-tracking.service';
+import { ManifestService } from './manifest.service';
+import { UserService } from 'src/modules/auth/services/user.service';
+import { JwtUtilService } from 'src/common/utils/jwt.service';
+import { PlaybackRequestDto } from '../dtos/playback-request.dto';
+import { PlaybackResponseDto } from '../dtos/playback-response.dto';
+
+@Injectable()
+export class PlaybackService {
+  private readonly logger = new Logger(PlaybackService.name);
+
+  constructor(
+    private readonly guestTracking: GuestTrackingService,
+    private readonly manifestService: ManifestService,
+    private readonly jwtUtilService: JwtUtilService,
+    private readonly userService: UserService,
+  ) {}
+
+  /**
+   * Returns manifest URL if allowed, or locked response
+   */
+  async getPlaybackFor(videoId: string, ctx: PlaybackRequestDto): Promise<PlaybackResponseDto> {
+    const token = ctx.authorization?.split(' ')[1];
+    let userId: string | undefined;
+
+    if (token) {
+      try {
+        const payload = this.jwtUtilService.verifyToken(token);
+        userId = payload.id;
+      } catch (err) {
+        // Invalid token → treat as guest
+        userId = undefined;
+      }
+    }
+
+    // If user exists, fetch subscription status
+    let isSubscribed = false;
+    if (userId) {
+      const user = await this.userService.findById(userId);
+      isSubscribed = !!user.isSubscribed;
+    }
+
+    // Subscribed users → unlimited access
+    if (isSubscribed) {
+      const manifestUrl = await this.manifestService.getManifest(videoId);
+      return { manifestUrl, locked: false };
+    }
+
+    // Guest / non-subscriber flow → limit 10 videos
+    const sessionId = ctx.sessionId || (ctx.ip ? String(ctx.ip) : 'unknown');
+    const count = userId
+      ? await this.guestTracking.incrementForUser(userId)
+      : await this.guestTracking.incrementForSession(sessionId);
+
+    const remaining = Math.max(0, 10 - count);
+    const manifestUrl = await this.manifestService.getManifest(videoId);
+
+    if (count > 10) {
+      return {
+        locked: true,
+        reason: userId
+          ? 'Payment required — subscribe to continue watching'
+          : 'Account required — create an account to continue watching',
+        freeRemaining: 0,
+      };
+    }
+
+    return { manifestUrl, locked: false, freeRemaining: remaining };
+  }
+}
+import { Module, forwardRef } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
+import { CommonModule } from 'src/common/common.module';
+import { VideoModule } from '../video/video.module';
+import { AuthModule } from '../auth/auth.module'; // ✅ Import AuthModule
+import { PlaybackController } from './controllers/playback.controller';
+import { PlaybackService } from './services/playback.service';
+import { CacheService } from './services/cache.service';
+import { GuestTrackingService } from './services/guest-tracking.service';
+import { ManifestService } from './services/manifest.service';
+import { SubscriptionModule } from '../subscription/subscription.module';
+
+@Module({
+  imports: [
+    HttpModule,                  
+    CommonModule,                
+    forwardRef(() => VideoModule),
+    forwardRef(() => AuthModule), // ✅ Needed for UserService injection
+    forwardRef(() => SubscriptionModule),
+  ],
+  controllers: [PlaybackController],
+  providers: [
+    PlaybackService,
+    GuestTrackingService,
+    CacheService,
+    ManifestService,
+  ],
+  exports: [PlaybackService],
+})
+export class PlaybackModule {}
+// playlist.controller.ts
+import { Controller, Get, Post, Delete, Patch, Param, Headers, Body, BadRequestException } from '@nestjs/common';
+import { PlaylistService } from '../services/playlist.service';
+
+import { CreatePlaylistDto } from '../dto/create-playlist.dto';
+import { JwtUtilService } from 'src/common/utils/jwt.service';
+import { User } from 'src/modules/auth/entities/user.entity';
+
+@Controller('playlist')
+export class PlaylistController {
+  playlistRepo: any;
+  constructor(
+    private readonly playlistService: PlaylistService,
+    private readonly jwtUtil: JwtUtilService,
+  ) {}
+
+  /** Authenticate user from Authorization header */
+  private authenticateUser(authHeader?: string) {
+    if (!authHeader) throw new BadRequestException('Unauthorized');
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = this.jwtUtil.decodeToken(token); // Use your JwtUtilService
+    if (!decoded || !decoded['id']) throw new BadRequestException('Invalid token');
+    return { id: decoded['id'] }; // Replace 'id' with whatever claim you store userId in
+  }
+
+  @Get()
+  async getAllPlaylists(@Headers('authorization') authHeader?: string) {
+    const user = this.authenticateUser(authHeader);
+    return this.playlistService.getAllPlaylists(user.id);
+  }
+
+  @Post()
+  async createPlaylist(@Body() dto: CreatePlaylistDto, @Headers('authorization') authHeader?: string) {
+    const playlist = this.playlistRepo.create({ ...dto, user:User });
+    return this.playlistRepo.save(playlist);
+  }
+
+  @Post(':playlistId/add/:videoId')
+  async addVideo(
+    @Param('playlistId') playlistId: string,
+    @Param('videoId') videoId: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const user = this.authenticateUser(authHeader);
+    return this.playlistService.addVideoToPlaylist(playlistId, videoId, user.id);
+  }
+
+  @Delete(':playlistId/remove/:videoId')
+  async removeVideo(
+    @Param('playlistId') playlistId: string,
+    @Param('videoId') videoId: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const user = this.authenticateUser(authHeader);
+    return this.playlistService.removeVideoFromPlaylist(playlistId, videoId);
+  }
+
+  @Patch(':playlistId/move/:videoId/:newPosition')
+  async moveVideo(
+    @Param('playlistId') playlistId: string,
+    @Param('videoId') videoId: string,
+    @Param('newPosition') newPosition: number,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const user = this.authenticateUser(authHeader);
+    return this.playlistService.moveVideo(playlistId, videoId, newPosition);
+  }
+}
+import { IsString } from 'class-validator';
+
+export class CreatePlaylistDto {
+  @IsString()
+  title: string;
+}
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+} from 'typeorm';
+import { Playlist } from './playlist.entity';
+import { Video } from 'src/modules/video/entities/video.entity';
+
+@Entity()
+export class PlaylistItem {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => Video, { eager: true })
+  video: Video;
+
+  @ManyToOne(() => Playlist, (playlist) => playlist.items, { onDelete: 'CASCADE' })
+  playlist: Playlist;
+
+  @Column()
+  position: number;
+}
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  OneToMany,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+import { PlaylistItem } from './playlist-item.entity';
+import { User } from 'src/modules/auth/entities/user.entity';
+
+@Entity()
+export class Playlist {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  title: string;
+
+  @OneToMany(() => PlaylistItem, (item) => item.playlist, { cascade: true })
+  items: PlaylistItem[];
+
+  @Column({ nullable: true })
+  userId: string;
+
+  // 👇 Use JoinColumn so TypeORM knows this is the foreign key
+  @ManyToOne(() => User, (user) => user.playlists, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+}
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Playlist } from '../entities/playlist.entity';
+import { PlaylistItem } from '../entities/playlist-item.entity';
+import { Video } from 'src/modules/video/entities/video.entity';
+import { CreatePlaylistDto } from '../dto/create-playlist.dto';
+
+@Injectable()
+export class PlaylistService {
+  constructor(
+    @InjectRepository(Playlist)
+    private readonly playlistRepo: Repository<Playlist>,
+
+    @InjectRepository(PlaylistItem)
+    private readonly itemRepo: Repository<PlaylistItem>,
+
+    @InjectRepository(Video)
+    private readonly videoRepository: Repository<Video>,
+  ) {}
+
+  // Get all playlists for a user
+  async getAllPlaylists(userId: string): Promise<Playlist[]> {
+    return this.playlistRepo.find({ where: { userId }, relations: ['items', 'items.video'] });
+  }
+
+  // Create a new playlist
+  async createPlaylist(dto: CreatePlaylistDto, userId: string): Promise<Playlist> {
+    const playlist = this.playlistRepo.create({ ...dto, userId });
+    return this.playlistRepo.save(playlist);
+  }
+
+  // Get playlist by ID
+  async getPlaylistById(id: string): Promise<Playlist> {
+    const playlist = await this.playlistRepo.findOne({
+      where: { id },
+      relations: ['items', 'items.video'],
+    });
+    if (!playlist) throw new NotFoundException('Playlist not found');
+    return playlist;
+  }
+
+  // Add video to playlist
+  async addVideoToPlaylist(playlistId: string, videoId: string, userId: string): Promise<Playlist>{
+    const playlist = await this.getPlaylistById(playlistId);
+    const video = await this.videoRepository.findOne({ where: { id: Number(videoId) } });
+    if (!video) throw new BadRequestException(`Video ID ${videoId} does not exist`);
+
+    if (playlist.items.some(item => item.video.id === Number(videoId)))
+      throw new BadRequestException('Video already in playlist');
+
+    const position = playlist.items.length ? Math.max(...playlist.items.map(i => i.position)) + 1 : 1;
+    const newItem = this.itemRepo.create({ video, playlist, position });
+    await this.itemRepo.save(newItem);
+
+    playlist.items.push(newItem);
+    playlist.items.sort((a, b) => a.position - b.position);
+    return playlist;
+  }
+
+  // Remove video
+  async removeVideoFromPlaylist(playlistId: string, videoId: string): Promise<Playlist> {
+    const playlist = await this.getPlaylistById(playlistId);
+    const item = playlist.items.find(i => i.video.id === Number(videoId));
+    if (!item) throw new NotFoundException('Video not found in playlist');
+
+    await this.itemRepo.delete(item.id);
+
+    playlist.items = playlist.items
+      .filter(i => i.id !== item.id)
+      .sort((a, b) => a.position - b.position)
+      .map((i, index) => ({ ...i, position: index + 1 }));
+
+    for (const i of playlist.items) {
+      await this.itemRepo.update(i.id, { position: i.position });
+    }
+
+    return playlist;
+  }
+
+  // Move video to new position
+  async moveVideo(playlistId: string, videoId: string, newPosition: number): Promise<Playlist> {
+    const playlist = await this.getPlaylistById(playlistId);
+    const item = playlist.items.find(i => i.video.id === Number(videoId));
+    if (!item) throw new NotFoundException('Video not found in playlist');
+
+    playlist.items = playlist.items.filter(i => i.video.id !== Number(videoId));
+    playlist.items.splice(newPosition - 1, 0, item);
+
+    playlist.items.forEach((i, index) => (i.position = index + 1));
+    await Promise.all(playlist.items.map(i => this.itemRepo.update(i.id, { position: i.position })));
+
+    return playlist;
+  }
+}
+import { Module, forwardRef } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Playlist } from './entities/playlist.entity';
+import { PlaylistItem } from './entities/playlist-item.entity';
+import { PlaylistService } from './services/playlist.service';
+import { PlaylistController } from './controllers/playlist.controller';
+import { AuthModule } from '../auth/auth.module';
+import { VideoModule } from '../video/video.module';
+import { Video } from '../video/entities/video.entity';
+
+@Module({
+  imports: [
+    // Register playlist entities with TypeORM
+    TypeOrmModule.forFeature([Playlist, PlaylistItem,Video]),
+
+    // Resolve circular dependency with AuthModule (User entity)
+    forwardRef(() => AuthModule),
+    forwardRef(() => VideoModule),
+  ],
+  controllers: [PlaylistController],
+  providers: [PlaylistService],
+  exports: [PlaylistService],
+})
+export class PlaylistModule {}
+
+// src/modules/subscription/controllers/subscription.controller.ts
+import { Controller, Post, Req, HttpCode, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import type express from 'express';
+import { SubscriptionService } from '../services/subscription.service';
+
+import { UserService } from 'src/modules/auth/services/user.service';
+import { JwtUtilService } from 'src/common/utils/jwt.service';
+
+@Controller('subscription')
+export class SubscriptionController {
+  constructor(
+    private readonly subscriptionService: SubscriptionService,
+    private readonly userService: UserService,
+    private readonly jwtUtilService: JwtUtilService,
+  ) {}
+
+  /**
+   * Subscribe the logged-in user for unlimited access (30 days).
+   * JWT must be provided in Authorization header.
+   */
+  @Post('subscribe')
+  @HttpCode(HttpStatus.OK)
+  async subscribe(@Req() req: express.Request) {
+    const authHeader = req.headers['authorization'] as string | undefined;
+    if (!authHeader) {
+      throw new UnauthorizedException('Authorization token missing');
+    }
+
+    const token = authHeader.split(' ')[1]; // Bearer <token>
+    if (!token) {
+      throw new UnauthorizedException('Invalid authorization header format');
+    }
+
+    // Verify JWT
+    const payload = this.jwtUtilService.verifyToken(token);
+
+    // Fetch user from DB
+    const user = await this.userService.findById(payload.id);
+
+    // Create subscription (30 days default)
+    const subscription = await this.subscriptionService.createSubscription(user.id);
+
+    return {
+      message: 'Subscription activated successfully!',
+      subscription,
+    };
+  }
+}
+// subscription/entities/payment.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+
+@Entity()
+export class Payment {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  userId: string;
+
+  @Column()
+  paymentId: string;
+
+  @Column()
+  status: string;
+
+  @Column()
+  amount: number;
+
+  @Column()
+  currency: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+}
+import { User } from 'src/modules/auth/entities/user.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+
+
+@Entity()
+export class Subscription {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ default: 'basic' })
+  plan: string;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  startDate: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  endDate: Date;
+
+  @ManyToOne(() => User, (user) => user.subscriptions, { eager: true, onDelete: 'CASCADE' })
+  user: User;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+}
+// subscription/interfaces/payment-provider.interface.ts
+export interface IPaymentProvider {
+  createPayment(amount: number, currency: string, userId: string): Promise<PaymentProviderResult>;
+}
+
+export interface PaymentProviderResult {
+  id: string;
+  clientSecret?: string;
+  status: 'pending' | 'completed' | 'failed';
+}
+// apps/subscription-service/src/services/stripe.service.ts
+import { Injectable } from '@nestjs/common';
+import Stripe from 'stripe';
+import { IPaymentProvider, PaymentProviderResult } from '../interfaces/payment-provider.interface';
+
+
+@Injectable()
+export class StripeService implements IPaymentProvider {
+  private stripe: Stripe;
+
+  constructor() {
+    this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+    apiVersion: process.env.STRIPE_API_VERSION as any, // cast as string
+});
+
+  }
+
+  async createPayment(amount: number, currency: string, userId: string): Promise<PaymentProviderResult> {
+    const paymentIntent = await this.stripe.paymentIntents.create({
+      amount,
+      currency,
+      metadata: { userId },
+    });
+
+    return {
+      id: paymentIntent.id,
+      clientSecret: paymentIntent.client_secret!,
+      status: paymentIntent.status === 'requires_payment_method' ? 'pending' : 'completed',
+    };
+  }
+}
+// src/modules/subscription/services/subscription.service.ts
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Subscription } from '../entities/subscription.entity';
+import { UserService } from 'src/modules/auth/services/user.service';
+
+@Injectable()
+export class SubscriptionService {
+  private readonly logger = new Logger(SubscriptionService.name);
+
+  constructor(
+    @InjectRepository(Subscription)
+    private readonly subscriptionRepository: Repository<Subscription>,
+    private readonly userService: UserService,
+  ) {}
+
+  /**
+   * Create a subscription for a user (called by controller)
+   */
+  async createSubscription(id: string): Promise<Subscription> {
+    const user = await this.userService.findById(id);
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    const now = new Date();
+    const endDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+    const subscription = this.subscriptionRepository.create({
+      user,
+      startDate: now,
+      endDate,
+      isActive: true,
+    });
+
+    await this.subscriptionRepository.save(subscription);
+
+    // Update user's subscription status
+    await this.userService.updateSubscription(id, true);
+
+    this.logger.log(`User ${id} subscribed until ${endDate.toISOString()}`);
+    return subscription;
+  }
+
+  /** Create a subscription for a user (legacy method, used internally) */
+  async subscribeUser(userId: string): Promise<Subscription> {
+    const user = await this.userService.findById(userId);
+
+    const now = new Date();
+    const endDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+    const subscription = this.subscriptionRepository.create({
+      user,
+      startDate: now,
+      endDate,
+      isActive: true,
+    });
+
+    await this.subscriptionRepository.save(subscription);
+
+    // Update user's subscription status using existing UserService method
+    await this.userService.updateSubscription(userId, true);
+
+    this.logger.log(`User ${userId} subscribed until ${endDate.toISOString()}`);
+    return subscription;
+  }
+
+  /** Cancel subscription */
+  async cancelSubscription(userId: string): Promise<void> {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    await this.userService.updateSubscription(userId, false);
+    this.logger.warn(`Subscription cancelled for user ${userId}`);
+  }
+
+  /** Check if user is subscribed */
+  async isUserSubscribed(userId: string): Promise<boolean> {
+    const user = await this.userService.findById(userId);
+    return !!user?.isSubscribed;
+  }
+}
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Payment } from './entities/payment.entity';
+import { Subscription } from './entities/subscription.entity';
+import { SubscriptionService } from './services/subscription.service';
+import { StripeService } from './services/stripe.service';
+import { SubscriptionController } from './controllers/subscription.controller';
+import { AuthModule } from '../auth/auth.module';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([Payment, Subscription]),
+    AuthModule,
+  ],
+  providers: [
+    SubscriptionService,
+    StripeService,
+    {
+      provide: 'IPaymentProvider',
+      useClass: StripeService,
+    },
+  ],
+  controllers: [SubscriptionController],
+  exports: [SubscriptionService],
+})
+export class SubscriptionModule {}
+
+import { Controller, Get, Param, Query, Patch, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { VideoService } from '../services/video.service';
+
+@Controller('videos')
+export class VideoController {
+  constructor(private readonly videoService: VideoService) {}
+
+  // Get paginated videos
+  @Get()
+  findAll(@Query('page') page: number = 1, @Query('limit') limit: number = 20) {
+    return this.videoService.getVideos(page, limit);
+  }
+
+  // Get single video details
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.videoService.findById((id));
+  }
+
+  // Increment video views (authenticated)
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/views')
+  incrementViews(@Param('id') id: string) {
+    return this.videoService.incrementViews((id));
+  }
+
+  // Like a video (authenticated)
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/like')
+  likeVideo(@Param('id') id: string) {
+    return this.videoService.likeVideo((id));
+  }
+}
+// src/modules/video/dtos/create-video.dto.ts
+import { IsString, IsOptional } from 'class-validator';
+
+export class CreateVideoDto {
+  @IsString()
+  title: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsString()
+  videoUrl: string;
+
+  @IsOptional()
+  @IsString()
+  thumbnailUrl?: string;
+}
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateVideoDto } from './create-video.dto';
+
+export class UpdateVideoDto extends PartialType(CreateVideoDto) {}
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import { Video } from './video.entity';
+
+@Entity()
+export class Category {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  name: string;
+
+  @OneToMany(() => Video, (video) => video.category)
+  videos: Video[];
+}
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Category } from './category.entity';
+
+@Entity()
+export class Video {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  title: string;
+
+  @Column({ nullable: true })
+  description: string;
+
+  @Column({ nullable: true })
+  videoUrl: string;
+
+  @Column({ nullable: true })
+  thumbnailUrl: string;
+
+  @Column({ nullable: true })
+  duration: number; // seconds
+
+  @ManyToOne(() => Category, (category) => category.videos)
+  @JoinColumn({ name: 'categoryId' })
+  category: Category;
+
+  @Column({ default: 0 })
+  views: number;
+
+  @Column({ default: 0 })
+  likes: number;
+
+  @CreateDateColumn()
+  createdAt: Date;
+}
+// src/modules/video/services/video.service.ts
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Video } from '../entities/video.entity';
+import { Category } from '../entities/category.entity';
+import { PaginationService } from 'src/common/pagination/pagination.service';
+
+@Injectable()
+export class VideoService {
+  constructor(
+    @InjectRepository(Video)
+    private readonly videoRepository: Repository<Video>,
+
+    @InjectRepository(Category)
+    private readonly categoryRepository: Repository<Category>,
+
+    private readonly paginationService: PaginationService, // reusable pagination
+  ) {}
+
+  /**
+   * Get paginated list of videos
+   * @param page number of the page (starting from 1)
+   * @param limit number of videos per page
+   */
+  async getVideos(page: number = 1, limit: number = 20): Promise<Video[]> {
+    const skip = (page - 1) * limit;
+
+    const [videos] = await this.videoRepository.findAndCount({
+      take: limit,
+      skip,
+      // ✅ Explicitly include `createdAt` so TypeORM includes it in the query
+      select: [
+        'id',
+        'title',
+        'thumbnailUrl',
+        'videoUrl',
+        'views',
+        'likes',
+        'createdAt', // <-- important fix
+      ],
+      relations: ['category'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return videos;
+  }
+
+  async findById(id: string): Promise<Video> {
+    const videoId = Number(id);
+    if (isNaN(videoId)) {
+      throw new BadRequestException(`Invalid video ID: ${id}`);
+    }
+
+    const video = await this.videoRepository.findOne({
+      where: { id: videoId },
+      relations: ['category'],
+    });
+
+    if (!video) throw new NotFoundException(`Video with ID ${id} not found`);
+    return video;
+  }
+
+  async incrementViews(id: string): Promise<Video> {
+    const video = await this.findById(id);
+    video.views += 1;
+    return await this.videoRepository.save(video);
+  }
+
+  async likeVideo(id: string): Promise<Video> {
+    const video = await this.findById(id);
+    video.likes += 1;
+    return await this.videoRepository.save(video);
+  }
+
+  /**
+   * Generate signed manifest URL for streaming
+   * @param video Video entity
+   * @param ttlSeconds time-to-live in seconds
+   */
+  getSignedManifestUrl(video: Video, ttlSeconds: number): string {
+    const baseUrl = video.videoUrl; // assuming this is the S3 or CDN URL
+    const expires = Math.floor(Date.now() / 1000) + ttlSeconds;
+    const token = 'secure-token-placeholder'; // Replace with real signing logic
+
+    return `${baseUrl}?expires=${expires}&token=${token}`;
+  }
+}
+import { Module, forwardRef } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Video } from './entities/video.entity';
+import { Category } from './entities/category.entity';
+import { VideoController } from './controllers/video.controller';
+import { VideoService } from './services/video.service';
+import { PaginationService } from 'src/common/pagination/pagination.service';
+import { CommonModule } from 'src/common/common.module';
+import { AuthModule } from '../auth/auth.module';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([Video, Category]),
+
+    // ✅ Import Common utilities (pagination, cache, etc.)
+    CommonModule,
+
+    // ✅ Bring in AuthModule to access JwtService, JwtAuthGuard, etc.
+    forwardRef(() => AuthModule),
+  ],
+
+  controllers: [VideoController],
+  providers: [
+    VideoService,
+    PaginationService,
+  ],
+
+  // ✅ Export anything that might be used elsewhere
+  exports: [
+    VideoService,
+    TypeOrmModule,
+  ],
+})
+export class VideoModule {}
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { AuthModule } from './modules/auth/auth.module';
+import { VideoModule } from './modules/video/video.module';
+import { PlaybackModule } from './modules/playback/playback.module';
+import { SubscriptionModule } from './modules/subscription/subscription.module';
+import { PlaylistModule } from './modules/playlist/playlist.module';
+import { CommonModule } from './common/common.module';
+
+@Module({
+  imports: [
+    // Load environment variables globally
+    ConfigModule.forRoot({ isGlobal: true }),
+
+    // TypeORM configuration using env variables
+    TypeOrmModule.forRoot({
+      type: 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT ?? '5432', 10),
+      username: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASS || 'password',
+      database: process.env.DB_NAME || 'tv',
+      autoLoadEntities: true,
+      synchronize: true, // ⚠️ Only enable in dev
+    }),
+
+    // Feature modules
+    CommonModule,
+    AuthModule,
+    VideoModule,
+    PlaybackModule,
+    PlaylistModule,
+    SubscriptionModule,
+  ],
+  controllers: [AppController],
+  providers: [AppService],
+})
+export class AppModule {}
