@@ -17,7 +17,7 @@ const likeCount = document.getElementById("likeCount");
 // === Backend ===
 const BACKEND_HOST =
   window.location.hostname === "localhost"
-    ? "http://localhost:7000"
+    ? "http://192.168.0.197:7000"
     : `http://${window.location.hostname}:7000`;
 const LIKES_URL = `${BACKEND_HOST}/likes`;
 
