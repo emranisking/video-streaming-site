@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Playlist } from '../entities/playlist.entity';
@@ -17,6 +18,8 @@ export class PlaylistService {
 
     @InjectRepository(Video)
     private readonly videoRepository: Repository<Video>,
+
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -24,14 +27,21 @@ export class PlaylistService {
    */
   private normalizeVideoUrl(url: string): string {
     if (!url) return url;
-    if (url.includes('/home/emran/project/videos_hls/')) {
-      return url.replace('/home/emran/project/videos_hls/', '/videos_hls/');
+    const videosHlsPath = this.configService.get<string>('VIDEOS_HLS_PATH', '/home/emran/project/videos_hls');
+    const videoHlsPath = this.configService.get<string>('VIDEO_HLS_PATH', '/home/emran/project/video_hls');
+    const thumbnailsPath = this.configService.get<string>('THUMBNAILS_PATH', '/home/emran/project/thumbnails');
+    const videosHlsRoute = this.configService.get<string>('VIDEOS_HLS_ROUTE', '/videos_hls');
+    const videoHlsRoute = this.configService.get<string>('VIDEO_HLS_ROUTE', '/video_hls');
+    const thumbnailsRoute = this.configService.get<string>('THUMBNAILS_ROUTE', '/thumbnails');
+
+    if (url.includes(videosHlsPath)) {
+      return url.replace(videosHlsPath, videosHlsRoute);
     }
-    if (url.includes('/home/emran/project/video_hls/')) {
-      return url.replace('/home/emran/project/video_hls/', '/video_hls/');
+    if (url.includes(videoHlsPath)) {
+      return url.replace(videoHlsPath, videoHlsRoute);
     }
-    if (url.includes('/home/emran/project/thumbnails/')) {
-      return url.replace('/home/emran/project/thumbnails/', '/thumbnails/');
+    if (url.includes(thumbnailsPath)) {
+      return url.replace(thumbnailsPath, thumbnailsRoute);
     }
     return url;
   }

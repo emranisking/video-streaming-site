@@ -1404,43 +1404,128 @@ kubectl apply -f deployment.yaml
 
 ## ⚙️ Environment Configuration
 
-### **Required Variables**
+### **Complete Environment Variables**
 
 ```env
-# Database
+# ==========================
+# App Environment
+# ==========================
+NODE_ENV=development      # or production
+PORT=7000
+
+# ==========================
+# Database Configuration
+# ==========================
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
 DB_PASS=your_secure_password
 DB_NAME=tv
 
-# Redis
+# ==========================
+# Redis Configuration
+# ==========================
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=          # Optional
 
-# JWT
+# ==========================
+# JWT Configuration
+# ==========================
 JWT_SECRET=your_secret_key_min_32_chars
 JWT_EXPIRE=9999y          # Long-lived tokens
 
-# Server
-NODE_ENV=development      # or production
-PORT=7000
-
-# CORS
+# ==========================
+# CORS Configuration
+# ==========================
 CORS_ORIGINS=http://localhost:3000,http://192.168.0.197:3000
 
-# FFmpeg (optional, auto-detected)
-FFMPEG_PATH=/usr/bin/ffmpeg
+# ==========================
+# Media Paths Configuration
+# ==========================
+# Base directory for all media files (Optional, used as fallback)
+MEDIA_BASE_PATH=/home/emran/project
 
-# Media Paths
-VIDEOS_PATH=./video
-HLS_OUTPUT_PATH=./videos_hls
-THUMBNAILS_PATH=./thumbnails
+# Internal HLS videos directory (within project)
+VIDEOS_HLS_PATH=/home/emran/project/videos_hls
+VIDEOS_HLS_ROUTE=/videos_hls
 
-# Rate Limiting
+# External HLS videos directory (outside project)
+VIDEO_HLS_PATH=/home/emran/project/video_hls
+VIDEO_HLS_ROUTE=/video_hls
+
+# Thumbnails directory
+THUMBNAILS_PATH=/home/emran/project/thumbnails
+THUMBNAILS_ROUTE=/thumbnails
+
+# ==========================
+# FFmpeg Configuration
+# ==========================
+FFMPEG_PATH=/usr/bin/ffmpeg   # Optional, auto-detected if not set
+
+# ==========================
+# Rate Limiting & Subscription
+# ==========================
 FREE_USER_LIMIT=200       # Videos per 30 days
 SUBSCRIPTION_DURATION=30  # Days
+```
+
+### **Environment Variables Reference**
+
+| Variable | Default | Purpose | Example |
+|----------|---------|---------|---------|
+| `NODE_ENV` | development | Environment mode | `production`, `development` |
+| `PORT` | 7000 | Server port | `3000`, `7000` |
+| `DB_HOST` | localhost | PostgreSQL host | `postgres.internal`, `db.example.com` |
+| `DB_PORT` | 5432 | PostgreSQL port | `5432` |
+| `DB_USER` | - | Database username | `postgres`, `app_user` |
+| `DB_PASS` | - | Database password | Your secure password |
+| `DB_NAME` | tv | Database name | `tv`, `streaming_db` |
+| `REDIS_HOST` | localhost | Redis host | `redis.internal`, `redis-cache.aws.com` |
+| `REDIS_PORT` | 6379 | Redis port | `6379` |
+| `JWT_SECRET` | - | JWT signing secret (min 32 chars) | Your secret key |
+| `JWT_EXPIRE` | 9999y | JWT expiration | `24h`, `30d`, `1y` |
+| `CORS_ORIGINS` | - | Allowed frontend origins (comma-separated) | `http://localhost:3000,https://app.example.com` |
+| `VIDEOS_HLS_PATH` | `{cwd}/videos_hls` | Internal HLS storage path | `/mnt/storage/videos_hls` |
+| `VIDEOS_HLS_ROUTE` | `/videos_hls` | Internal HLS API route | `/hls`, `/video/internal` |
+| `VIDEO_HLS_PATH` | `/home/emran/project/video_hls` | External HLS storage path | `/mnt/external/videos_hls` |
+| `VIDEO_HLS_ROUTE` | `/video_hls` | External HLS API route | `/hls-external`, `/videos` |
+| `THUMBNAILS_PATH` | `{cwd}/thumbnails` | Thumbnails storage path | `/mnt/storage/thumbnails` |
+| `THUMBNAILS_ROUTE` | `/thumbnails` | Thumbnails API route | `/images`, `/thumbs` |
+| `FFMPEG_PATH` | Auto-detected | FFmpeg binary path | `/usr/bin/ffmpeg`, `/opt/ffmpeg` |
+| `FREE_USER_LIMIT` | 200 | Max videos per 30 days | `100`, `500` |
+| `SUBSCRIPTION_DURATION` | 30 | Subscription duration (days) | `7`, `30`, `365` |
+
+### **Easy Configuration Changes**
+
+All media paths are now **configurable via environment variables**, making it easy to:
+
+✅ **Change storage locations** without code changes
+```env
+# Change internal HLS directory
+VIDEOS_HLS_PATH=/mnt/fast-storage/hls
+
+# Change external HLS directory
+VIDEO_HLS_PATH=/mnt/external-storage/videos
+
+# Change thumbnails directory
+THUMBNAILS_PATH=/cdn/thumbnails
+```
+
+✅ **Change API routes** without code changes
+```env
+# Serve videos at different routes
+VIDEOS_HLS_ROUTE=/stream
+VIDEO_HLS_ROUTE=/videos
+THUMBNAILS_ROUTE=/images
+```
+
+✅ **Scale horizontally** - use S3, MinIO, or network storage
+```env
+# Point to network storage
+VIDEOS_HLS_PATH=/mnt/nfs/videos_hls
+VIDEO_HLS_PATH=/mnt/nfs/video_hls
+THUMBNAILS_PATH=/mnt/nfs/thumbnails
 ```
 
 ### **Development vs Production**
@@ -1451,6 +1536,7 @@ NODE_ENV=development
 DB_LOGGING=true
 DEBUG=*
 LOG_LEVEL=debug
+CORS_ORIGINS=http://localhost:3000,http://localhost:4000
 
 # .env.production
 NODE_ENV=production
@@ -1458,7 +1544,27 @@ DB_LOGGING=false
 DEBUG=false
 LOG_LEVEL=warn
 CORS_ORIGINS=https://yourdomain.com
+VIDEOS_HLS_PATH=/var/media/videos_hls
+VIDEO_HLS_PATH=/var/media/video_hls
+THUMBNAILS_PATH=/var/media/thumbnails
 ```
+
+### **Loading Environment Variables**
+
+Create a `.env` file in the project root:
+
+```bash
+cp example-env.txt .env
+# Edit .env with your configuration
+```
+
+Or use `.env.production`, `.env.development`, etc. for different environments.
+
+NestJS automatically loads from `.env` files in this priority order:
+1. `.env.{NODE_ENV}.local`
+2. `.env.{NODE_ENV}`
+3. `.env.local`
+4. `.env`
 
 ---
 
