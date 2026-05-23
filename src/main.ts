@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { join, extname } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -6,6 +7,7 @@ import * as express from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const configService = app.get(ConfigService);
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -39,9 +41,17 @@ app.enableCors({
 
   const expressApp = app.getHttpAdapter().getInstance();
 
+  // Get configuration values
+  const thumbnailsPath = configService.get<string>('THUMBNAILS_PATH', '/home/emran/project/thumbnails');
+  const thumbnailsRoute = configService.get<string>('THUMBNAILS_ROUTE', '/thumbnails');
+  const videosHlsPath = configService.get<string>('VIDEOS_HLS_PATH', join(__dirname, '..', 'videos_hls'));
+  const videosHlsRoute = configService.get<string>('VIDEOS_HLS_ROUTE', '/videos_hls');
+  const videoHlsPath = configService.get<string>('VIDEO_HLS_PATH', '/home/emran/project/video_hls');
+  const videoHlsRoute = configService.get<string>('VIDEO_HLS_ROUTE', '/video_hls');
+
   // Thumbnails: serve both internal and external folders with correct CORS headers
   expressApp.use(
-    '/thumbnails',
+    thumbnailsRoute,
     (req, res, next) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader(
@@ -59,7 +69,7 @@ app.enableCors({
     },
     (req, res, next) => {
       // First try to serve from external folder
-      express.static('/home/emran/project/thumbnails', {
+      express.static(thumbnailsPath, {
         setHeaders: (res, filePath) => {
           res.setHeader('Content-Type', mimeFor(filePath));
           res.setHeader('Accept-Ranges', 'bytes');
@@ -78,7 +88,7 @@ app.enableCors({
 
   // HLS videos: static folder with correct headers
   expressApp.use(
-    '/videos_hls',
+    videosHlsRoute,
     (req, res, next) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader(
@@ -92,7 +102,7 @@ app.enableCors({
       res.setHeader('Accept-Ranges', 'bytes');
       next();
     },
-    express.static(join(__dirname, '..', 'videos_hls'), {
+    express.static(videosHlsPath, {
       setHeaders: (res, filePath) => {
         res.setHeader('Content-Type', mimeFor(filePath));
         res.setHeader('Accept-Ranges', 'bytes');
@@ -100,9 +110,9 @@ app.enableCors({
     })
   );
 
-  // External HLS videos folder (video_hls)
+  // External HLS videos folder
   expressApp.use(
-    '/video_hls',
+    videoHlsRoute,
     (req, res, next) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader(
@@ -116,7 +126,7 @@ app.enableCors({
       res.setHeader('Accept-Ranges', 'bytes');
       next();
     },
-    express.static('/home/emran/project/video_hls', {
+    express.static(videoHlsPath, {
       setHeaders: (res, filePath) => {
         res.setHeader('Content-Type', mimeFor(filePath));
         res.setHeader('Accept-Ranges', 'bytes');
