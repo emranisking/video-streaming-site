@@ -4,6 +4,7 @@ import {
   BadRequestException,
   OnModuleInit,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, W } from 'typeorm';
 import { Video } from '../entities/video.entity';
@@ -30,6 +31,8 @@ export class VideoService implements OnModuleInit {
     private readonly paginationService: PaginationService,
 
     private readonly watchHistoryService: WatchHistoryService,
+
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -47,14 +50,21 @@ export class VideoService implements OnModuleInit {
    */
   private normalizeUrl(url: string): string {
     if (!url) return url;
-    if (url.includes('/home/emran/project/videos_hls/')) {
-      return url.replace('/home/emran/project/videos_hls/', '/videos_hls/');
+    const videosHlsPath = this.configService.get<string>('VIDEOS_HLS_PATH', '/home/emran/project/videos_hls');
+    const videoHlsPath = this.configService.get<string>('VIDEO_HLS_PATH', '/home/emran/project/video_hls');
+    const thumbnailsPath = this.configService.get<string>('THUMBNAILS_PATH', '/home/emran/project/thumbnails');
+    const videosHlsRoute = this.configService.get<string>('VIDEOS_HLS_ROUTE', '/videos_hls');
+    const videoHlsRoute = this.configService.get<string>('VIDEO_HLS_ROUTE', '/video_hls');
+    const thumbnailsRoute = this.configService.get<string>('THUMBNAILS_ROUTE', '/thumbnails');
+
+    if (url.includes(videosHlsPath)) {
+      return url.replace(videosHlsPath, videosHlsRoute);
     }
-    if (url.includes('/home/emran/project/video_hls/')) {
-      return url.replace('/home/emran/project/video_hls/', '/video_hls/');
+    if (url.includes(videoHlsPath)) {
+      return url.replace(videoHlsPath, videoHlsRoute);
     }
-    if (url.includes('/home/emran/project/thumbnails/')) {
-      return url.replace('/home/emran/project/thumbnails/', '/thumbnails/');
+    if (url.includes(thumbnailsPath)) {
+      return url.replace(thumbnailsPath, thumbnailsRoute);
     }
     return url;
   }
@@ -134,6 +144,11 @@ export class VideoService implements OnModuleInit {
    */
   async convertLocalVideoToHls(video: Video): Promise<Video> {
     const videoDir = path.join(process.cwd(), 'video');
+    const videosHlsPath = this.configService.get<string>('VIDEOS_HLS_PATH', path.join(process.cwd(), 'videos_hls'));
+    const thumbnailsPath = this.configService.get<string>('THUMBNAILS_PATH', path.join(process.cwd(), 'thumbnails'));
+    const videosHlsRoute = this.configService.get<string>('VIDEOS_HLS_ROUTE', '/videos_hls');
+    const thumbnailsRoute = this.configService.get<string>('THUMBNAILS_ROUTE', '/thumbnails');
+
     const files = fs.readdirSync(videoDir).filter(f => f.endsWith('.mp4'));
     
     // Find the actual file that matches the title
@@ -146,9 +161,9 @@ export class VideoService implements OnModuleInit {
     }
     
     const inputPath = path.join(videoDir, matchingFile);
-    const hlsOutputDir = path.join(process.cwd(), 'videos_hls', video.title);
+    const hlsOutputDir = path.join(videosHlsPath, video.title);
     const hlsOutputPath = path.join(hlsOutputDir, `${video.title}.m3u8`);
-    const thumbnailPath = path.join(process.cwd(), 'thumbnails', `${video.title}.jpg`);
+    const thumbnailPath = path.join(thumbnailsPath, `${video.title}.jpg`);
 
     if (!fs.existsSync(hlsOutputDir)) fs.mkdirSync(hlsOutputDir, { recursive: true });
     if (!fs.existsSync(path.dirname(thumbnailPath))) {
@@ -217,8 +232,8 @@ export class VideoService implements OnModuleInit {
       });
     }
 
-      video.videoUrl = `/videos_hls/${video.title}/${video.title}.m3u8`;
-      video.thumbnailUrl = `/thumbnails/${video.title}.jpg`;
+      video.videoUrl = `${videosHlsRoute}/${video.title}/${video.title}.m3u8`;
+      video.thumbnailUrl = `${thumbnailsRoute}/${video.title}.jpg`;
     return await this.videoRepository.save(video);
   }
   /**
