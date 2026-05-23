@@ -22,3 +22,21 @@ STRIPE_SECRET_KEY=sk_test_YourStripeSecretKeyHere
 # ==========================
 NODE_ENV=development
 PORT=7000
+
+# ==========================
+# Media Paths Configuration
+# ==========================
+# Base directory for all media files
+MEDIA_BASE_PATH=/home/emran/project
+
+# Internal HLS videos directory (within project)
+VIDEOS_HLS_PATH=/home/emran/project/videos_hls
+VIDEOS_HLS_ROUTE=/videos_hls
+
+# External HLS videos directory (outside project)
+VIDEO_HLS_PATH=/home/emran/project/video_hls
+VIDEO_HLS_ROUTE=/video_hls
+
+# Thumbnails directory
+THUMBNAILS_PATH=/home/emran/project/thumbnails
+THUMBNAILS_ROUTE=/thumbnails
