@@ -28,19 +28,23 @@ export class Video {
   @JoinColumn({ name: 'categoryId' })
   category: Category;
 
+  @Column({nullable: true})
   @Column({ default: 0 })
   views: number;
 
+  @Column({nullable: true})
   @Column({ default: 0 })
   likes: number;
 
+  @Column({nullable: true})
   @CreateDateColumn()
   createdAt: Date;
 
-  @OneToMany(() => WatchHistory, (history) => history.video)
+  @OneToMany(() => WatchHistory, (history) => history.video, { nullable: true, onDelete: 'SET NULL' })
   history: WatchHistory[];
     watchHistory: any;
 
-  @OneToMany(() => UserLike, (like) => like.video)
+  
+  @OneToMany(() => UserLike, (like) => like.video, { nullable: true, onDelete: 'SET NULL' })
   userLikes: UserLike[];
 }
