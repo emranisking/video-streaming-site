@@ -19,9 +19,42 @@ export class PlaylistService {
     private readonly videoRepository: Repository<Video>,
   ) {}
 
+  /**
+   * Normalize video URLs to relative routes (remove absolute paths)
+   */
+  private normalizeVideoUrl(url: string): string {
+    if (!url) return url;
+    if (url.includes('/home/emran/project/videos_hls/')) {
+      return url.replace('/home/emran/project/videos_hls/', '/videos_hls/');
+    }
+    if (url.includes('/home/emran/project/video_hls/')) {
+      return url.replace('/home/emran/project/video_hls/', '/video_hls/');
+    }
+    if (url.includes('/home/emran/project/thumbnails/')) {
+      return url.replace('/home/emran/project/thumbnails/', '/thumbnails/');
+    }
+    return url;
+  }
+
+  /**
+   * Recursively normalize all video URLs in a playlist
+   */
+  private normalizePlaylist(playlist: Playlist): Playlist {
+    if (playlist.items && Array.isArray(playlist.items)) {
+      playlist.items.forEach(item => {
+        if (item.video) {
+          item.video.videoUrl = this.normalizeVideoUrl(item.video.videoUrl);
+          item.video.thumbnailUrl = this.normalizeVideoUrl(item.video.thumbnailUrl);
+        }
+      });
+    }
+    return playlist;
+  }
+
   // Get all playlists for a user
   async getAllPlaylists(userId: string): Promise<Playlist[]> {
-    return this.playlistRepo.find({ where: { userId }, relations: ['items', 'items.video'] });
+    const playlists = await this.playlistRepo.find({ where: { userId }, relations: ['items', 'items.video'] });
+    return playlists.map(p => this.normalizePlaylist(p));
   }
 
   // Create a new playlist
@@ -38,7 +71,7 @@ async createPlaylist(dto: CreatePlaylistDto, userId: string): Promise<Playlist> 
       relations: ['items', 'items.video'],
     });
     if (!playlist) throw new NotFoundException('Playlist not found');
-    return playlist;
+    return this.normalizePlaylist(playlist);
   }
 
   // Add video to playlist
@@ -56,7 +89,7 @@ async createPlaylist(dto: CreatePlaylistDto, userId: string): Promise<Playlist> 
 
     playlist.items.push(newItem);
     playlist.items.sort((a, b) => a.position - b.position);
-    return playlist;
+    return this.normalizePlaylist(playlist);
   }
 
   // Remove video
@@ -76,7 +109,7 @@ async createPlaylist(dto: CreatePlaylistDto, userId: string): Promise<Playlist> 
       await this.itemRepo.update(i.id, { position: i.position });
     }
 
-    return playlist;
+    return this.normalizePlaylist(playlist);
   }
 
   // Move video to new position
@@ -91,6 +124,6 @@ async createPlaylist(dto: CreatePlaylistDto, userId: string): Promise<Playlist> 
     playlist.items.forEach((i, index) => (i.position = index + 1));
     await Promise.all(playlist.items.map(i => this.itemRepo.update(i.id, { position: i.position })));
 
-    return playlist;
+    return this.normalizePlaylist(playlist);
   }
 }
