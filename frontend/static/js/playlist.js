@@ -6,7 +6,7 @@ if (!token) {
 }
 
 const BACKEND_HOST = window.location.hostname === "localhost"
-  ? "http://localhost:7000"
+  ? "http://192.168.0.197:7000"
   : `http://${window.location.hostname}:7000`;
 
 const playlistContainer = document.getElementById("playlistContainer");
