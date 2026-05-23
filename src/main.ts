@@ -25,7 +25,7 @@ app.enableCors({
      'http://192.168.10.128:4000',
      'http://192.168.230.1:4000',
      'http://192.168.10.137:4000',
-     'http://192.168.230.1:3000',
+     'http://192.168.0.197:3000',
      'http://localhost:3000',
     // 'https://encephalic-marybeth-flagrantly.ngrok-free.dev/',
     
@@ -39,7 +39,7 @@ app.enableCors({
 
   const expressApp = app.getHttpAdapter().getInstance();
 
-  // Thumbnails: static folder with correct CORS headers
+  // Thumbnails: serve both internal and external folders with correct CORS headers
   expressApp.use(
     '/thumbnails',
     (req, res, next) => {
@@ -54,9 +54,26 @@ app.enableCors({
       );
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Accept-Ranges', 'bytes');
       next();
     },
-    express.static(join(__dirname, '..', 'thumbnails'))
+    (req, res, next) => {
+      // First try to serve from external folder
+      express.static('/home/emran/project/thumbnails', {
+        setHeaders: (res, filePath) => {
+          res.setHeader('Content-Type', mimeFor(filePath));
+          res.setHeader('Accept-Ranges', 'bytes');
+        },
+      })(req, res, () => {
+        // If not found, try internal folder
+        express.static(join(__dirname, '..', 'thumbnails'), {
+          setHeaders: (res, filePath) => {
+            res.setHeader('Content-Type', mimeFor(filePath));
+            res.setHeader('Accept-Ranges', 'bytes');
+          },
+        })(req, res, next);
+      });
+    }
   );
 
   // HLS videos: static folder with correct headers
@@ -76,6 +93,30 @@ app.enableCors({
       next();
     },
     express.static(join(__dirname, '..', 'videos_hls'), {
+      setHeaders: (res, filePath) => {
+        res.setHeader('Content-Type', mimeFor(filePath));
+        res.setHeader('Accept-Ranges', 'bytes');
+      },
+    })
+  );
+
+  // External HLS videos folder (video_hls)
+  expressApp.use(
+    '/video_hls',
+    (req, res, next) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Range, Content-Type, Authorization, ngrok-skip-browser-warning'
+      );
+      res.setHeader(
+        'Access-Control-Expose-Headers',
+        'Content-Length, Content-Range'
+      );
+      res.setHeader('Accept-Ranges', 'bytes');
+      next();
+    },
+    express.static('/home/emran/project/video_hls', {
       setHeaders: (res, filePath) => {
         res.setHeader('Content-Type', mimeFor(filePath));
         res.setHeader('Accept-Ranges', 'bytes');
