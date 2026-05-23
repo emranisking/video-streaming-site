@@ -27,7 +27,7 @@ const volumeBar = document.getElementById("volumeBar");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 
 // Backend Setup
-const BACKEND_HOST = "http://192.168.10.137:7000";
+const BACKEND_HOST = "http://192.168.0.197:7000";
 const BACKEND_URL = `${BACKEND_HOST}/videos`;
 
 // UUID fallback

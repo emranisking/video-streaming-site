@@ -17,6 +17,23 @@ export class WatchHistoryService {
     private readonly userRepo: Repository<User>,
   ) {}
 
+  /**
+   * Normalize video URLs to relative routes (remove absolute paths)
+   */
+  private normalizeVideoUrl(url: string): string {
+    if (!url) return url;
+    if (url.includes('/home/emran/project/videos_hls/')) {
+      return url.replace('/home/emran/project/videos_hls/', '/videos_hls/');
+    }
+    if (url.includes('/home/emran/project/video_hls/')) {
+      return url.replace('/home/emran/project/video_hls/', '/video_hls/');
+    }
+    if (url.includes('/home/emran/project/thumbnails/')) {
+      return url.replace('/home/emran/project/thumbnails/', '/thumbnails/');
+    }
+    return url;
+  }
+
   // ➕ Add video to history
   async addToHistory(userId: string, videoId: number) {
   const user = await this.userRepo.findOne({ where: { id: userId } });
@@ -42,9 +59,20 @@ export class WatchHistoryService {
 
   // 📜 Get user's watch history
   async getUserHistory(userId: string) {
-    return this.historyRepo.find({
+    const history = await this.historyRepo.find({
       where: { user: { id: userId } },
+      relations: ['video'],
       order: { watchedAt: 'DESC' }, // Latest watched video comes first
     });
+
+    // Normalize video URLs in history
+    history.forEach(entry => {
+      if (entry.video) {
+        entry.video.videoUrl = this.normalizeVideoUrl(entry.video.videoUrl);
+        entry.video.thumbnailUrl = this.normalizeVideoUrl(entry.video.thumbnailUrl);
+      }
+    });
+
+    return history;
   }
 }

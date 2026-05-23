@@ -43,6 +43,23 @@ export class VideoService implements OnModuleInit {
   }
 
   /**
+   * Normalize URLs to relative routes (remove absolute paths)
+   */
+  private normalizeUrl(url: string): string {
+    if (!url) return url;
+    if (url.includes('/home/emran/project/videos_hls/')) {
+      return url.replace('/home/emran/project/videos_hls/', '/videos_hls/');
+    }
+    if (url.includes('/home/emran/project/video_hls/')) {
+      return url.replace('/home/emran/project/video_hls/', '/video_hls/');
+    }
+    if (url.includes('/home/emran/project/thumbnails/')) {
+      return url.replace('/home/emran/project/thumbnails/', '/thumbnails/');
+    }
+    return url;
+  }
+
+  /**
    * Get paginated list of videos
    */
   async getVideos(page: number = 1, limit: number = 20): Promise<Video[]> {
@@ -54,6 +71,12 @@ export class VideoService implements OnModuleInit {
       select: ['id', 'title', 'thumbnailUrl', 'videoUrl', 'views', 'likes', 'createdAt'],
       relations: ['category'],
       order: { createdAt: 'DESC' },
+    });
+
+    // Normalize all URLs to relative routes
+    videos.forEach(video => {
+      video.videoUrl = this.normalizeUrl(video.videoUrl);
+      video.thumbnailUrl = this.normalizeUrl(video.thumbnailUrl);
     });
 
     return videos;
@@ -69,24 +92,34 @@ export class VideoService implements OnModuleInit {
     });
 
     if (!video) throw new NotFoundException(`Video with ID ${id} not found`);
+    
+    // Normalize URLs to relative routes
+    video.videoUrl = this.normalizeUrl(video.videoUrl);
+    video.thumbnailUrl = this.normalizeUrl(video.thumbnailUrl);
+    
     return video;
   }
 
   async incrementViews(id: string, user: User | null): Promise<Video> {
     const video = await this.findById(id);
     video.views += 1;
-    await this.videoRepository.save(video);
+    const updated = await this.videoRepository.save(video);
+    updated.videoUrl = this.normalizeUrl(updated.videoUrl);
+    updated.thumbnailUrl = this.normalizeUrl(updated.thumbnailUrl);
     if (user) {
       await this.watchHistoryService.addToHistory(user.id, video.id);
     }
 
-    return video;
+    return updated;
   }
 
   async likeVideo(id: string): Promise<Video> {
     const video = await this.findById(id);
     video.likes += 1;
-    return await this.videoRepository.save(video);
+    const updated = await this.videoRepository.save(video);
+    updated.videoUrl = this.normalizeUrl(updated.videoUrl);
+    updated.thumbnailUrl = this.normalizeUrl(updated.thumbnailUrl);
+    return updated;
   }
 
   getSignedManifestUrl(video: Video, ttlSeconds: number): string {
@@ -100,12 +133,27 @@ export class VideoService implements OnModuleInit {
    * Convert a local MP4 video to HLS segments and generate thumbnail
    */
   async convertLocalVideoToHls(video: Video): Promise<Video> {
-    const inputPath = path.join(process.cwd(), 'video', `${video.title}.mp4`);
+    const videoDir = path.join(process.cwd(), 'video');
+    const files = fs.readdirSync(videoDir).filter(f => f.endsWith('.mp4'));
+    
+    // Find the actual file that matches the title
+    const matchingFile = files.find(f => 
+      path.parse(f).name.replace(/\s+/g, ' ').trim() === video.title
+    );
+    
+    if (!matchingFile) {
+      throw new Error(`Video file not found for title: ${video.title}`);
+    }
+    
+    const inputPath = path.join(videoDir, matchingFile);
     const hlsOutputDir = path.join(process.cwd(), 'videos_hls', video.title);
     const hlsOutputPath = path.join(hlsOutputDir, `${video.title}.m3u8`);
     const thumbnailPath = path.join(process.cwd(), 'thumbnails', `${video.title}.jpg`);
 
     if (!fs.existsSync(hlsOutputDir)) fs.mkdirSync(hlsOutputDir, { recursive: true });
+    if (!fs.existsSync(path.dirname(thumbnailPath))) {
+      fs.mkdirSync(path.dirname(thumbnailPath), { recursive: true });
+    }
 
     // Convert asynchronously
     if (!fs.existsSync(hlsOutputPath)) {
@@ -121,7 +169,22 @@ export class VideoService implements OnModuleInit {
           hlsOutputPath,
         ]);
 
-        ffmpeg.on('close', code => code === 0 ? resolve(null) : reject(new Error(`ffmpeg exited ${code}`)));
+        let errorOutput = '';
+        ffmpeg.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        ffmpeg.on('error', (err) => {
+          reject(new Error(`Failed to spawn ffmpeg: ${err.message}`));
+        });
+
+        ffmpeg.on('close', code => {
+          if (code === 0) {
+            resolve(null);
+          } else {
+            reject(new Error(`ffmpeg exited ${code}\nError: ${errorOutput}`));
+          }
+        });
       });
     }
 
@@ -134,7 +197,23 @@ export class VideoService implements OnModuleInit {
           '-vframes', '1',
           thumbnailPath,
         ]);
-        ffmpeg.on('close', code => code === 0 ? resolve(null) : reject(new Error(`thumbnail ffmpeg exited ${code}`)));
+
+        let errorOutput = '';
+        ffmpeg.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        ffmpeg.on('error', (err) => {
+          reject(new Error(`Failed to spawn ffmpeg for thumbnail: ${err.message}`));
+        });
+
+        ffmpeg.on('close', code => {
+          if (code === 0) {
+            resolve(null);
+          } else {
+            reject(new Error(`thumbnail ffmpeg exited ${code}\nError: ${errorOutput}`));
+          }
+        });
       });
     }
 
@@ -161,7 +240,11 @@ export class VideoService implements OnModuleInit {
     }
 
     for (const file of files) {
-      const title = path.parse(file).name;
+      // Extract title and normalize spaces
+      let title = path.parse(file).name
+        .replace(/\s+/g, ' ')
+        .trim();
+      
       let video = await this.videoRepository.findOne({ where: { title } });
       if (!video) {
         video = new Video();
