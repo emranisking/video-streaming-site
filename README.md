@@ -41,6 +41,12 @@ The system handles automatic video conversion from MP4 to HLS format, real-time 
 
 ## ✨ Key Features
 
+### 📊 **Rate Limiting**
+- **Free Users**: 200 videos per 30-day rolling window
+- **Guests**: Session-based watch limit
+- **Subscribers**: Unlimited access
+- Redis-backed distributed counters
+
 ### 🔐 **Authentication & Security**
 - User registration with bcryptjs password hashing (10 rounds)
 - JWT-based authentication (long-lived tokens)
@@ -80,11 +86,6 @@ The system handles automatic video conversion from MP4 to HLS format, real-time 
 - Free tier with rate limiting (200 videos/30 days)
 - Guest access with session-based tracking
 
-### 📊 **Rate Limiting**
-- **Free Users**: 200 videos per 30-day rolling window
-- **Guests**: Session-based watch limit
-- **Subscribers**: Unlimited access
-- Redis-backed distributed counters
 
 ---
 
