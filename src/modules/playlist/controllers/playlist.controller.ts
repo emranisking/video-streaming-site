@@ -69,4 +69,11 @@ async createPlaylist(
     const user = this.authenticateUser(authHeader);
     return this.playlistService.moveVideo(playlistId, videoId, newPosition);
   }
+
+  @Delete(':playlistId')
+  async deletePlaylist(@Param('playlistId') id: string, @Headers('authorization') authHeader?: string) {
+    const user = this.authenticateUser(authHeader);
+    return this.playlistService.deletePlaylist(id, user.id);
+  }
+
 }
