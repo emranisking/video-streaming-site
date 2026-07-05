@@ -4,7 +4,7 @@ import { SubscriptionService } from 'src/modules/subscription/services/subscript
 
 @Injectable()
 export class GuestTrackingService {
-  private readonly FREE_LIMIT = 200;
+  private readonly FREE_LIMIT = 2;
   private readonly TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
   constructor(

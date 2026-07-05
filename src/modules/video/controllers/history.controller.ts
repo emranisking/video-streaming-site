@@ -30,4 +30,6 @@ export class WatchHistoryController {
     }
     return this.historyService.getUserHistory(user.id);
   }
+
+  
 }

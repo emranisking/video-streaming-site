@@ -136,4 +136,10 @@ async createPlaylist(dto: CreatePlaylistDto, userId: string): Promise<Playlist> 
 
     return this.normalizePlaylist(playlist);
   }
+
+  async deletePlaylist(id: string, userId: string): Promise<void> {
+  const playlist = await this.playlistRepo.findOne({ where: { id, userId } });
+  if (!playlist) throw new NotFoundException('Playlist not found');
+  await this.playlistRepo.remove(playlist);
+}
 }
