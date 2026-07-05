@@ -28,6 +28,7 @@ app.enableCors({
      'http://192.168.230.1:4000',
      'http://192.168.10.137:4000',
      'http://192.168.0.197:3000',
+     'http://192.168.0.197:3001',
      'http://localhost:3000',
     // 'https://encephalic-marybeth-flagrantly.ngrok-free.dev/',
     
